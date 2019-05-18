@@ -2,7 +2,7 @@
 // Paste this into your index.js file. 
 
 const Alexa = require("ask-sdk");
-
+const https = require("https");
 const invocationName = "lift guide";
 
 // Session Attributes 
@@ -150,13 +150,87 @@ const AMAZON_NavigateHomeIntent_Handler =  {
     },
 };
 
+function getJourneyStatus(endStationName) {
+    let url = "";
+    let params = `?start=Greenwich&end=${endStationName}`
+    let data = ""
+    
+    return Promise ((resolve, reject) => {
+        https.get(url+params, (result) => {
+            result.on('data', (d) => {
+                data += d;
+            });
+            result.on('end', () => {
+                resolve(JSON.parse(data));
+            });
+        });
+    });
+    
+}
+
+function getBadStationNameFromJourney(journey) {
+    let badStations = journey.faultyLiftStations;
+    let names = [];
+    for (var i = 0; i < journey.legs.length; i++) {
+        if (i == 0) {
+            var station = journey.legs[i].departurePoint;
+            if (badStations.includes(station.icsCode)) names.push(station.commonName);
+        }
+        var station = journey.legs[i].arrivalPoint;
+        if (badStations.includes(station.icsCode)) names.push(station.commonName);
+    }
+    return names;
+}
+
+function getListRepresentation(list) {
+    if (list.length == 1) {
+        return list[0];
+    } else {
+        
+    }
+}
 
 const stationFinder_Handler =  {
+    
     canHandle(handlerInput) {
         const request = handlerInput.requestEnvelope.request;
         return request.type === 'IntentRequest' && request.intent.name === 'stationFinder' ;
     },
     handle(handlerInput) {
+        
+        let slotValues = getSlotValues(request.intent.slots); 
+        getJourneyStatus(slotValues.station.heardAs).then((journey) => {
+            let first = journey[0];
+            if (first.result == 'bad') {
+                
+                let badStationsNames = getBadStationNameFromJourney(first);
+                let badStationsForSpeech = getListRepresentation(badStationsNames);
+                let returnSpeech = `the lift is not working in ${first} do you want to know an alternative route`;
+                
+                const main = require('./data/main.json')
+                const data = require('./templates/notworking.json')
+        
+        
+                return responseBuilder
+                    .speak(returnSpeech)
+                    .reprompt('try again, ' + say)
+                    .addDirective({
+                        type: 'Alexa.Presentation.APL.RenderDocument',
+                        version: '1.0',
+                        document: data,
+                    datasources: {
+                        "myDocumentData": {
+                            "type": "object",
+                        "properties": {
+                            "title": response,
+                            "image": "https://s3.amazonaws.com/notworking/Arrival+Station+Not+Working.png",
+                        }
+                    }
+                }
+                }).getResponse();
+            }
+        });
+        
         const request = handlerInput.requestEnvelope.request;
         const responseBuilder = handlerInput.responseBuilder;
         let sessionAttributes = handlerInput.attributesManager.getSessionAttributes();
@@ -285,6 +359,7 @@ const routeFinder_Handler =  {
         
         const main = require('./data/main.json')
         const data = require('./templates/differentroutes.json')
+
     
         return responseBuilder
             .speak(response)
